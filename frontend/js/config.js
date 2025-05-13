@@ -13,6 +13,7 @@ const config = {
     showFaces: true,
     showConfidence: true,
     showEmotions: true,  // Hiển thị cảm xúc / Show emotions
+    showIdentity: true,
     personColor: '#e74c3c',
     faceColor: '#2ecc71',
     emotionColor: '#ff9800',  // Màu mặc định cho cảm xúc / Default color for emotions

@@ -110,22 +110,21 @@ class ChromaFaceDB:
             )
             
             # Xử lý kết quả
-            faces = []
             if len(results["ids"]) > 0 and len(results["ids"][0]) > 0:
+                max_sim = -1
+                best_face = None
+
                 for i in range(len(results["ids"][0])):
-                    # Tính độ tương đồng (distances là khoảng cách cosine, chuyển thành similarity)
                     similarity = 1 - results["distances"][0][i]
-                    
-                    # Chỉ lấy kết quả vượt ngưỡng
-                    if similarity >= threshold:
-                        face_info = {
+                    if similarity >= threshold and similarity > max_sim:
+                        max_sim = similarity
+                        best_face = {
                             "id": results["ids"][0][i],
                             "metadata": results["metadatas"][0][i],
                             "similarity": similarity
                         }
-                        faces.append(face_info)
-            
-            return faces
+    
+                return best_face
         except Exception as e:
             logger.error(f"Lỗi khi tìm kiếm khuôn mặt: {e}")
             return []

@@ -87,6 +87,16 @@ export async function processFrame() {
         const formData = new FormData();
         formData.append('file', blob, 'frame.jpg');
         
+        // Prepare URL with query parameters
+        let apiUrl = new URL(config.serverUrl);
+        
+        // Add query parameters for identification if enabled
+        if (config.enableIdentification) {
+            apiUrl.searchParams.append('identify', 'true');
+            apiUrl.searchParams.append('threshold', config.identificationThreshold.toString());
+            apiUrl.searchParams.append('top_k', config.maxMatchResults.toString());
+        }
+
         // Send frame to server for processing
         const response = await fetch(config.serverUrl, {
             method: 'POST',
@@ -103,12 +113,13 @@ export async function processFrame() {
         // Save results to application state
         state.personBoxes = result.person_boxes || [];
         state.faceBoxes = result.face_boxes || [];
-        
+        state.identifiedCount = result.identified_count || 0;
+
         // Draw detection results
         drawDetections(state.personBoxes, state.faceBoxes);
         
         // Update statistics
-        updateStats(result.persons, result.faces, state.faceBoxes);
+        updateStats(result.persons, result.faces, state.faceBoxes, state.identifiedCount);
         
         // Increment frame counter for FPS calculation
         state.frameCount++;
@@ -198,6 +209,12 @@ export function drawDetections(personBoxes, faceBoxes) {
             const [x1, y1, x2, y2] = box.coords;
             const width = x2 - x1;
             const height = y2 - y1;
+
+            // Determine color based on identification status
+            let boxColor = config.faceColor;
+            if (config.enableIdentification && box.match && box.match.length > 0) {
+                boxColor = config.identifiedFaceColor || '#00FF00'; // Default to green if not specified
+            }
             
             // Draw face box
             ctx.strokeStyle = config.faceColor;
@@ -224,6 +241,19 @@ export function drawDetections(personBoxes, faceBoxes) {
                 ctx.fillStyle = config.faceColor;
             }
             
+            // Add identification info if available
+            if (config.enableIdentification && config.showIdentity && box.match && box.match.length > 0) {
+                // Use the top match (highest similarity)
+                const topMatch = box.match[0];
+                const name = topMatch.metadata.name || 'Unknown';
+                const similarity = (topMatch.distance * 100).toFixed(0);
+                
+                labelParts.push(`${name} (${similarity}%)`);
+                
+                // Use identified color for label background
+                ctx.fillStyle = config.identifiedFaceColor || '#00FF00';
+            }
+
             // Only draw label if we have something to show
             if (labelParts.length > 0) {
                 // Set font size for label

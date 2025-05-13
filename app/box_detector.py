@@ -1,15 +1,12 @@
 from os import putenv
 
-# Cấu hình môi trường cho AMD GPU / Environment setup for AMD GPUs
-putenv("HSA_OVERRIDE_GFX_VERSION", "10.3.0")
-putenv("ROCM_PATH", "/opt/rocm-6.4.0/")
-
 import numpy as np
 import cv2
 from .models import load_models, get_emotion_model_details
 from .config import EMOTION_LABELS
 import insightface
 from insightface.app import FaceAnalysis
+import os
 
 class Detector:
     """Xử lý nhận diện người, khuôn mặt và cảm xúc / Detection handler"""
@@ -30,9 +27,36 @@ class Detector:
         self.emotion_width = self.emotion_input_shape[2]
 
         # Khởi tạo face analyzer từ InsightFace
-        self.face_analyzer = FaceAnalysis(name="buffalo_l")
-        self.face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
-    
+        self.face_analyzer = None
+        try:
+            # First try with CUDA if available
+            import os
+            os.environ['CUDA_VISIBLE_DEVICES'] = '0'  # Use first GPU if available
+            
+            # Chuẩn bị thư mục models nếu cần
+            models_dir = os.path.join(os.path.expanduser('~'), '.insightface', 'models', 'buffalo_l')
+            os.makedirs(models_dir, exist_ok=True)
+            
+            try:
+                # Try with CUDA first
+                self.face_analyzer = FaceAnalysis(name="buffalo_l", providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+                self.face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
+                print("Successfully initialized InsightFace with CUDA")
+            except Exception as e:
+                print(f"Failed to initialize InsightFace with CUDA: {e}")
+                # Fall back to CPU
+                self.face_analyzer = FaceAnalysis(name="buffalo_l", providers=['CPUExecutionProvider'])
+                self.face_analyzer.prepare(ctx_id=-1, det_size=(640, 640))
+                print("Successfully initialized InsightFace with CPU")
+                
+        except Exception as e:
+            print(f"Failed to initialize InsightFace: {e}")
+            # Check if models directory exists
+            models_dir = os.path.join(os.path.expanduser('~'), '.insightface', 'models', 'buffalo_l')
+            if not os.path.exists(models_dir):
+                print(f"InsightFace models not found. Expected at: {models_dir}")
+                print("Please download models manually or run: python -m insightface.model_zoo --download-dir=~/.insightface/models/ --download buffalo_l")
+        
     def process_frame(self, frame):
         """
         Xử lý khung hình và trả về kết quả nhận diện.
@@ -146,8 +170,10 @@ class Detector:
                                     emotion = self._detect_emotion(face_roi)
                                 
                                     # Trích xuất vector embedding từ khuôn mặt
-                                    face_roi_embedding = self.extract_face_with_margin(face_roi, (fx1, fy1, fx2, fy2), margin_percent=0.2)
+                                    face_roi_embedding = self.extract_face_with_margin(original_frame, (px1 + fx1, py1 + fy1, px1 + fx2, py1 + fy2), margin_percent=0.2)
                                     embedding = self.get_embedding_from_image(face_roi_embedding)
+                                    if embedding is None:
+                                        print(f"Could not generate embedding for face")
                                 else:
                                     emotion = "Không xác định"  # Không thể xác định cảm xúc / Unknown emotion
                                     embedding = None
@@ -235,7 +261,6 @@ class Detector:
         except Exception as e:
             print(f"Lỗi khi nhận diện cảm xúc: {e}")
             return "Không xác định"
-        
 
     # Hàm trích xuất khuôn mặt với margin
     def extract_face_with_margin(self, img, bbox, margin_percent=0.2, min_size=112):
@@ -278,12 +303,33 @@ class Detector:
             np.ndarray: Vector embedding hoặc None nếu không phát hiện khuôn mặt.
         """
         try:
-            faces = self.face_analyzer.get(img)  # Sửa thành self.face_analyzer
-            if len(faces) == 0:
+            if self.face_analyzer is None:
+                print("Face analyzer not initialized properly")
                 return None
+                
+            if img is None or img.size == 0 or img.shape[0] == 0 or img.shape[1] == 0:
+                print("Invalid image input for embedding generation")
+                return None
+                
+            # Đảm bảo ảnh đủ lớn để phát hiện khuôn mặt
+            min_dim = min(img.shape[0], img.shape[1])
+            if min_dim < 80:  # InsightFace thường cần ảnh đủ lớn để phát hiện khuôn mặt
+                scale = 80 / min_dim
+                new_width = int(img.shape[1] * scale)
+                new_height = int(img.shape[0] * scale)
+                img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+            
+            # Thêm debug
+            print(f"Processing image with shape {img.shape} for embedding")
+            
+            faces = self.face_analyzer.get(img)
+            if len(faces) == 0:
+                print("No faces detected by face_analyzer in the provided image")
+                return None
+                
             best_face = max(faces, key=lambda x: x.det_score)
             return best_face.embedding
         except Exception as e:
-            print(f"Lỗi khi tạo embedding: {e}")
+            print(f"Error in get_embedding_from_image: {e}")
             return None
 

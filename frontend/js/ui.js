@@ -93,6 +93,14 @@ export function setupEventListeners() {
             drawDetections(state.personBoxes, state.faceBoxes);
         }
     });
+
+    // Thêm xử lý sự kiện cho hiển thị danh tính / Add identity toggle event listener
+    toggleIdentity.addEventListener('change', () => {
+    config.showIdentity = toggleIdentity.checked;
+    if (state.isRunning) {
+        drawDetections(state.personBoxes, state.faceBoxes);
+    }
+});
 }
 
 /**
