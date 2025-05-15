@@ -62,19 +62,31 @@ async def process_frame(file: UploadFile = File(...),
     }
     
     # Xử lý thông tin khuôn mặt
-    for i, (coords, conf, emotion, embedding) in enumerate(face_boxes):
-        face_info = {
-            "face_index": i,
-            "coords": coords,
-            "confidence": conf,
-            "emotion": emotion
-        }
-        
-        # Nếu yêu cầu nhận diện danh tính và có embedding
-        if identify and embedding is not None:
-            # Tìm kiếm trong database với embedding
-            match = chroma_db.search_faces(np.array(embedding), top_k=top_k, threshold=threshold)
-            face_info["match"] = match
+    for i, face_data in enumerate(face_boxes):
+        # Fix: Check the length of the tuple and handle accordingly
+        if len(face_data) == 4:  # Has embedding
+            coords, conf, emotion, embedding = face_data
+            face_info = {
+                "face_index": i,
+                "coords": coords,
+                "confidence": conf,
+                "emotion": emotion
+            }
+            
+            # Nếu yêu cầu nhận diện danh tính và có embedding
+            if identify and embedding is not None:
+                # Tìm kiếm trong database với embedding
+                match = chroma_db.search_faces(np.array(embedding), top_k=top_k, threshold=threshold)
+                face_info["match"] = match
+                
+        else:  # No embedding
+            coords, conf, emotion = face_data
+            face_info = {
+                "face_index": i,
+                "coords": coords,
+                "confidence": conf,
+                "emotion": emotion
+            }
             
         result["face_boxes"].append(face_info)
     

@@ -31,7 +31,7 @@ const config = {
     },
     
     // Server settings
-    serverUrl: '/process_frame',
+    serverUrl: 'http://localhost:8000/process_frame',
     
     // Performance settings
     frameRate: isMobile ? 10 : 30, // Lower FPS on mobile devices
